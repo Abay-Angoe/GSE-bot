@@ -1,0 +1,16 @@
+# Secrets
+.env
+
+# Runtime data (irreplaceable but machine-local; not for version control)
+gse.db
+africa.db
+scheduler_state.json
+
+# Logs
+*.log
+
+# Python / envs
+__pycache__/
+*.pyc
+.venv/
+venv/

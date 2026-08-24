@@ -1,0 +1,125 @@
+# GSE Bot configuration — tune without touching code.
+
+screener:
+  watchlist_size: 10          # top K written to watchlist + alerted
+  momentum_days: 20           # trading-day lookback for price return
+  liquidity_days: 10          # lookback for average volume
+  zero_volume_days: 5         # consecutive ~0-volume days -> liquidity_flag set
+  score_jump_alert: 15        # alert if a symbol's score jumps more than this vs prev run
+
+  # Factor weights. They are renormalized per-symbol over whichever factors are
+  # actually available, so a stock with null eps/dps/momentum isn't penalized for
+  # data it cannot have. Defaults from the build brief.
+  weights:
+    value: 0.30               # lower P/E scores higher (needs eps > 0)
+    income: 0.20              # dividend yield = dps / price (needs dps)
+    momentum: 0.30            # N-day price return (needs momentum_days of history)
+    liquidity: 0.20           # average traded volume
+
+sources:
+  gse_api: "https://dev.kwayisi.org/apis/gse"
+
+# The JSON API leaves eps/dps null; this scrapes them from the same provider's web
+# view so the value (P/E) and income (yield) factors can score. Set enabled: false
+# to fall back to momentum + liquidity only (e.g. if the page layout changes).
+fundamentals:
+  enabled: true
+  base_url: "https://afx.kwayisi.org/gse"
+
+# Built-in scheduler (python main.py schedule). At each run time it does the full
+# cycle: snapshot -> screen -> alerts -> IPO watch.
+schedule:
+  timezone: "local"          # "local" = this machine's clock; or e.g. "Africa/Accra", "UTC"
+  days: "mon-fri"            # GSE trades weekdays; use "mon-sun" to also run weekends
+  run_times: ["09:00", "15:30"]
+  africa_time: "16:00"       # pan-African screen runs once daily here; set null to disable
+
+ipo_watcher:
+  # Keyword pre-filter (cheap first pass on title + summary). Case-insensitive.
+  keywords:
+    - "IPO"
+    - "initial public offering"
+    - "offer for subscription"
+    - "public offer"
+    - "offer for sale"
+    - "prospectus"
+    - "to list"
+    - "lists on"
+    - "listed on"
+    - "listing on"
+    - "listing of"      # GSE PR phrasing, e.g. "LISTING OF FIRST ATLANTIC BANK PLC"
+    - "new listing"
+    - "to be listed"
+    - "admission to"
+    - "cross-listing"
+    - "cross listing"
+    - "GAX"
+    - "rights issue"
+    - "right issue"
+
+  # Optional LLM classification of candidates (filters false positives like
+  # non-GSE listings). Only runs when the provider's API key is set AND use_llm is
+  # true; otherwise falls back to keyword-only matches.
+  use_llm: true
+  llm_provider: "gemini"     # "gemini" (needs GEMINI_API_KEY) or "anthropic" (needs ANTHROPIC_API_KEY)
+  llm_min_confidence: 0.5
+  llm_models:
+    gemini: "gemini-2.5-flash"
+    anthropic: "claude-haiku-4-5-20251001"
+
+  # Per-source caps so a noisy page can't flood the dedupe table in one run.
+  max_items_per_source: 60
+
+  # Sources. type: "rss" (parsed by feedparser) or "html" (links scraped + filtered).
+  # Authoritative sources first; news outlets are early signals to confirm.
+  # Adjust URLs as feeds/pages change.
+  sources:
+    # Authoritative WordPress RSS feeds (verified working 2026-06).
+    - name: "SEC Ghana - public notices"
+      type: "rss"
+      url: "https://sec.gov.gh/category/public-notice/feed/"
+      authoritative: true
+    - name: "GSE - announcements"
+      type: "rss"
+      url: "https://gse.com.gh/feed/"
+      authoritative: true
+    # News / early signals.
+    - name: "African Markets - GSE"
+      type: "html"
+      url: "https://www.african-markets.com/en/stock-markets/gse"
+      authoritative: false
+    - name: "MyJoyOnline - business"
+      type: "rss"
+      url: "https://www.myjoyonline.com/business/feed/"
+      authoritative: false
+    - name: "Norvan Reports - markets"
+      type: "rss"
+      url: "https://norvanreports.com/feed/"
+      authoritative: false
+
+storage:
+  db_path: "gse.db"
+
+# Pan-African screener (separate, isolated from the GSE bot) — see africa.py.
+# Scrapes afx.kwayisi.org for multiple exchanges into its own africa.db.
+# Run once daily; it is the heaviest job (hundreds of pages, fetched gently).
+africa:
+  db_path: "africa.db"
+  base_url: "https://afx.kwayisi.org"
+  exchanges:                 # afx exchange codes -> country
+    gse: "Ghana"
+    ngx: "Nigeria"
+    nse: "Kenya"
+    use: "Uganda"
+    brvm: "West Africa (BRVM)"
+  pause: 0.25                # seconds between page fetches (respect the free source)
+  max_per_exchange: 200      # safety cap on symbols scraped per exchange
+  watchlist_size: 25         # top K "low value / high potential" names kept
+  momentum_days: 20
+  liquidity_days: 10
+  # Balanced blend weights (renormalized per symbol over available factors).
+  weights:
+    value: 0.35              # low positive P/E
+    income: 0.25             # dividend yield
+    momentum: 0.20           # N-day return (null until history accrues)
+    liquidity: 0.20          # average traded volume

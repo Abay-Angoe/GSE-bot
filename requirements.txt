@@ -1,0 +1,14 @@
+requests>=2.32
+PyYAML>=6.0
+# IPO watcher (step 5)
+feedparser>=6.0
+beautifulsoup4>=4.12
+# Alerts use the stdlib (urllib) for Telegram; no extra dep required.
+# Dashboard (step 6):
+streamlit>=1.36
+pandas>=2.0
+# Optional LLM IPO classification (step 5):
+# anthropic>=0.40
+# Scheduling: the built-in scheduler is a plain poll loop (stdlib only) that
+# survives sleep/resume. APScheduler is no longer required.
+python-dotenv>=1.0
