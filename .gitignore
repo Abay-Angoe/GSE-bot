@@ -1,9 +1,8 @@
 # Secrets
 .env
 
-# Runtime data (irreplaceable but machine-local; not for version control)
-gse.db
-africa.db
+# Databases (gse.db/africa.db) are committed as a data backup — kept in the repo.
+# Runtime state stays local.
 scheduler_state.json
 
 # Logs
