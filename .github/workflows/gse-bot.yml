@@ -1,0 +1,69 @@
+name: GSE Bot daily run
+
+# Runs the bot in the cloud on a schedule — no laptop required. Each run checks
+# out the repo (which holds the SQLite DBs), fetches the day's data, and commits
+# the refreshed gse.db / africa.db back, so the history both accumulates AND stays
+# backed up in the repo. Ghana is UTC, GSE closes ~15:00 UTC.
+
+on:
+  schedule:
+    - cron: "45 15 * * 1-5"   # 15:45 UTC, weekdays, just after the GSE close
+  workflow_dispatch: {}         # manual "Run workflow" button for testing
+
+permissions:
+  contents: write               # allow committing the refreshed DBs back
+
+concurrency:
+  group: gse-bot
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      # Set these as repo secrets (Settings -> Secrets and variables -> Actions).
+      # Missing ones just mean no Telegram alerts / no LLM IPO filtering.
+      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      PYTHONUTF8: "1"
+    steps:
+      - name: Check out repo (brings the DBs with it)
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install runtime dependencies
+        # Headless run: only the data-pipeline deps (not streamlit/dashboard).
+        run: pip install requests PyYAML feedparser beautifulsoup4 python-dotenv
+
+      - name: GSE snapshot -> screen -> IPO watch
+        # One bad step (e.g. a provider outage) must not skip the commit below.
+        run: |
+          set +e
+          python main.py snapshot
+          python main.py run-screen --send
+          python main.py run-ipo --send
+          exit 0
+
+      - name: Pan-African snapshot + screen + IPO scan
+        run: |
+          set +e
+          python main.py run-africa
+          exit 0
+
+      - name: Commit refreshed databases
+        if: always()
+        run: |
+          git config user.name "gse-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add gse.db africa.db
+          if git diff --cached --quiet; then
+            echo "No DB changes to commit."
+          else
+            git commit -m "data update (automated): $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+          fi
